@@ -1,113 +1,176 @@
+
 import streamlit as st
 import pandas as pd
-import seaborn as sns
+import seaborn as sb
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import LabelEncoder
 
-st.set_page_config(page_title="Loan Approval Analysis", layout="wide")
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
+st.set_page_config(
+    page_title="Loan Approval Dashboard",
+    page_icon="🏦",
+    layout="wide"
+)
 
-st.title("🏦 Loan Approval Analysis & Prediction App")
+# -----------------------------
+# CUSTOM CSS
+# -----------------------------
+st.markdown("""
+<style>
+.main-title {
+    font-size: 40px;
+    font-weight: 700;
+    color: #2E86C1;
+}
+.sub-title {
+    font-size: 18px;
+    color: #5D6D7E;
+}
+.card {
+    background-color: #F4F6F7;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+}
+</style>
+""", unsafe_allow_html=True)
 
-# -------------------- Load Data --------------------
+# -----------------------------
+# HEADER
+# -----------------------------
+st.markdown('<div class="main-title">🏦 Loan Approval Analysis & Prediction</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Interactive Dashboard for Loan Eligibility Insights</div>', unsafe_allow_html=True)
+st.markdown("---")
+
+# -----------------------------
+# LOAD DATA
+# -----------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("LP_Train.csv")
+
+    df['Gender'].fillna('Male', inplace=True)
+    df['Married'].fillna('Yes', inplace=True)
+    df['Dependents'].fillna(0, inplace=True)
+    df['Self_Employed'].fillna('No', inplace=True)
+    df['LoanAmount'].fillna(128.0, inplace=True)
+    df['Loan_Amount_Term'].fillna(360.0, inplace=True)
+    df['Credit_History'].fillna(1.0, inplace=True)
+
+    df['Dependents'] = df['Dependents'].replace('[+]', '', regex=True).astype(int)
+
     return df
 
 df = load_data()
 
-st.subheader("Raw Dataset")
-st.dataframe(df.head())
+# -----------------------------
+# KPI METRICS
+# -----------------------------
+approved = df[df['Loan_Status'] == 'Y'].shape[0]
+total = df.shape[0]
+approval_rate = round((approved / total) * 100, 2)
 
-# -------------------- Data Cleaning --------------------
-df['Gender'] = df['Gender'].fillna('Male')
-df['Married'] = df['Married'].fillna('Yes')
-df['Dependents'] = df['Dependents'].fillna(0)
-df['Self_Employed'] = df['Self_Employed'].fillna('No')
-df['LoanAmount'] = df['LoanAmount'].fillna(df['LoanAmount'].mean())
-df['Loan_Amount_Term'] = df['Loan_Amount_Term'].fillna(df['Loan_Amount_Term'].mean())
-df['Credit_History'] = df['Credit_History'].fillna(1.0)
+col1, col2, col3 = st.columns(3)
+col1.metric("📄 Total Applications", total)
+col2.metric("✅ Approved Loans", approved)
+col3.metric("📊 Approval Rate", f"{approval_rate}%")
 
-df['Dependents'] = df['Dependents'].replace('[+]', '', regex=True).astype(int)
+st.markdown("---")
 
-st.success("Missing values handled successfully")
+# -----------------------------
+# SIDEBAR
+# -----------------------------
+st.sidebar.header("📌 Dashboard Menu")
+option = st.sidebar.selectbox(
+    "Choose Section",
+    ["Dataset Overview", "EDA Visualizations", "Loan Approval Predictor"]
+)
 
-# -------------------- Exploratory Analysis --------------------
-st.subheader("📊 Exploratory Data Analysis")
+# -----------------------------
+# DATASET OVERVIEW
+# -----------------------------
+if option == "Dataset Overview":
+    st.subheader("📄 Dataset Overview")
 
-col1, col2 = st.columns(2)
-with col1:
-    st.write("Loan Status Count")
+    with st.expander("🔍 View Raw Data"):
+        st.dataframe(df)
+
+    st.subheader("📌 Statistical Summary")
+    st.dataframe(df.describe())
+
+    st.subheader("🧾 Missing Values")
+    st.dataframe(df.isnull().sum().to_frame("Missing Count"))
+
+# -----------------------------
+# EDA VISUALIZATIONS
+# -----------------------------
+elif option == "EDA Visualizations":
+    st.subheader("📈 Exploratory Data Analysis")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Loan Status vs Credit History**")
+        fig, ax = plt.subplots()
+        pd.crosstab(df['Loan_Status'], df['Credit_History']).plot(kind='bar', ax=ax)
+        st.pyplot(fig)
+
+    with col2:
+        st.markdown("**Applicant Income Distribution**")
+        fig, ax = plt.subplots()
+        sb.boxplot(x=df['Loan_Status'], y=df['ApplicantIncome'], ax=ax)
+        st.pyplot(fig)
+
+    st.markdown("**Property Area vs Loan Status**")
     fig, ax = plt.subplots()
-    sns.countplot(x=df['Loan_Status'], ax=ax)
+    pd.crosstab(df['Property_Area'], df['Loan_Status']).plot(kind='bar', ax=ax)
     st.pyplot(fig)
 
-with col2:
-    st.write("Credit History vs Loan Status")
-    fig, ax = plt.subplots()
-    pd.crosstab(df['Loan_Status'], df['Credit_History']).plot(kind='bar', ax=ax)
-    st.pyplot(fig)
+# -----------------------------
+# LOAN APPROVAL PREDICTOR
+# -----------------------------
+elif option == "Loan Approval Predictor":
+    st.subheader("🧮 Loan Approval Probability Checker")
 
-st.write("Applicant Income Distribution")
-fig, ax = plt.subplots()
-sns.boxplot(x=df['Loan_Status'], y=df['ApplicantIncome'], ax=ax)
-st.pyplot(fig)
+    col1, col2 = st.columns(2)
 
-# -------------------- Model Building --------------------
-st.subheader("🤖 Loan Approval Prediction Model")
+    with col1:
+        name = st.text_input("👤 Applicant Name")
+        income = st.slider("💰 Applicant Income", 0, 30000, 5000)
+        co_income = st.slider("🤝 Coapplicant Income", 0, 15000, 2000)
+        loan_amt = st.slider("🏦 Loan Amount", 0, 600, 150)
 
-model_df = df.copy()
+    with col2:
+        credit = st.radio("📊 Credit History", [1.0, 0.0], format_func=lambda x: "Good" if x == 1.0 else "Bad")
+        education = st.selectbox("🎓 Education", ["Graduate", "Not Graduate"])
+        married = st.selectbox("💍 Marital Status", ["Yes", "No"])
 
-le = LabelEncoder()
-for col in ['Gender','Married','Education','Self_Employed','Property_Area','Loan_Status']:
-    model_df[col] = le.fit_transform(model_df[col])
+    if st.button("🔍 Check Loan Approval"):
+        score = 0
 
-X = model_df[['Gender','Married','Dependents','Education','Self_Employed',
-              'ApplicantIncome','CoapplicantIncome','LoanAmount',
-              'Loan_Amount_Term','Credit_History','Property_Area']]
-y = model_df['Loan_Status']
+        if credit == 1.0:
+            score += 50
+        if income > 5000:
+            score += 20
+        if co_income > 2000:
+            score += 10
+        if loan_amt < 200:
+            score += 10
+        if education == "Graduate":
+            score += 5
+        if married == "Yes":
+            score += 5
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        st.markdown("### 📊 Approval Probability")
+        st.progress(score / 100)
 
-model = LogisticRegression(max_iter=1000)
-model.fit(X_train, y_train)
+        if score >= 70:
+            st.success(f"✅ **{name}**, High Chance of Loan Approval ({score}%)")
+        elif score >= 50:
+            st.warning(f"⚠️ **{name}**, Moderate Chance of Loan Approval ({score}%)")
+        else:
+            st.error(f"❌ **{name}**, Low Chance of Loan Approval ({score}%)")
 
-accuracy = model.score(X_test, y_test)
-st.info(f"Model Accuracy: {accuracy:.2f}")
-
-# -------------------- User Input --------------------
-st.subheader("📝 Check Your Loan Approval Chances")
-
-name = st.text_input("Applicant Name")
-gender = st.selectbox("Gender", ['Male','Female'])
-married = st.selectbox("Married", ['Yes','No'])
-education = st.selectbox("Education", ['Graduate','Not Graduate'])
-self_emp = st.selectbox("Self Employed", ['Yes','No'])
-property_area = st.selectbox("Property Area", ['Urban','Semiurban','Rural'])
-dependents = st.number_input("Dependents", 0, 5)
-app_income = st.number_input("Applicant Income", 0)
-co_income = st.number_input("Coapplicant Income", 0)
-loan_amt = st.number_input("Loan Amount", 0)
-loan_term = st.number_input("Loan Amount Term", 0)
-credit = st.selectbox("Credit History", [1.0, 0.0])
-
-if st.button("Predict Loan Status"):
-    user_data = pd.DataFrame([[gender, married, dependents, education, self_emp,
-                               app_income, co_income, loan_amt, loan_term, credit, property_area]],
-                             columns=X.columns)
-
-    for col in ['Gender','Married','Education','Self_Employed','Property_Area']:
-        user_data[col] = le.fit_transform(user_data[col])
-
-    prediction = model.predict(user_data)[0]
-    probability = model.predict_proba(user_data)[0][1]
-
-    if prediction == 1:
-        st.success(f"🎉 Congratulations {name}! Your loan is likely to be APPROVED")
-    else:
-        st.error(f"❌ Sorry {name}, your loan approval chances are LOW")
-
-    st.write(f"Approval Probability: {probability*100:.2f}%")
+        st.info("📌 This prediction is based on rule-based logic for academic demonstration.")
